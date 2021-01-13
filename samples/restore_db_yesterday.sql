@@ -75,10 +75,10 @@ SET @quotedDbName = QUOTENAME(@dbDst);
 SET @sql = FORMATMESSAGE(N'DBCC SHRINKDATABASE(%s);', @quotedDbName);
 IF @Debug = 1 OR @Execute = 'N' RAISERROR('DBCC SHRINKDATABASE', 0, 1) WITH NOWAIT;
 IF @Execute = 'Y'
-EXECUTE @sql = [dbo].[CommandExecute] @DatabaseContext=N'master', @Command = @sql, @CommandType = 'DBCC SHRINKDATABASE', @Mode = 1, @DatabaseName = @dbDst, @LogToTable = 'Y', @Execute = 'Y';
+  EXECUTE @sql = [dbo].[CommandExecute] @DatabaseContext=N'master', @Command = @sql, @CommandType = 'DBCC SHRINKDATABASE', @Mode = 1, @DatabaseName = @dbDst, @LogToTable = 'Y', @Execute = 'Y';
 
 -- set TRUSTWORTHY
 SET @sql = FORMATMESSAGE(N'ALTER DATABASE %s SET TRUSTWORTHY ON;', @quotedDbName);
 IF @Debug = 1 OR @Execute = 'N' RAISERROR('SET TRUSTWORTHY ON', 0, 1) WITH NOWAIT;
 IF @Execute = 'Y'
-EXECUTE @sql = [dbo].[CommandExecute] @DatabaseContext=N'master', @Command = @sql, @CommandType = 'ALTER DATABASE SET TRUSTWORTHY ON', @Mode = 1, @DatabaseName = @dbDst, @LogToTable = 'Y', @Execute = 'Y';
+  EXECUTE @sql = [dbo].[CommandExecute] @DatabaseContext=N'master', @Command = @sql, @CommandType = 'ALTER DATABASE SET TRUSTWORTHY ON', @Mode = 1, @DatabaseName = @dbDst, @LogToTable = 'Y', @Execute = 'Y';
