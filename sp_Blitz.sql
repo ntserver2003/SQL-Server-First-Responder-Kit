@@ -37,7 +37,7 @@ AS
 	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 	
 
-	SELECT @Version = '7.99999', @VersionDate = '20201211';
+	SELECT @Version = '8.0', @VersionDate = '20210117';
 	SET @OutputType = UPPER(@OutputType);
 
     IF(@VersionCheckMode = 1)
@@ -92,9 +92,9 @@ AS
 	tigertoolbox and are provided under the MIT license:
 	https://github.com/Microsoft/tigertoolbox
 	
-	All other copyrights for sp_Blitz are held by Brent Ozar Unlimited, 2020.
+	All other copyrights for sp_Blitz are held by Brent Ozar Unlimited, 2021.
 
-	Copyright (c) 2020 Brent Ozar Unlimited
+	Copyright (c) 2021 Brent Ozar Unlimited
 
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
@@ -1670,6 +1670,7 @@ AS
 										  + '] has auto-shrink enabled.  This setting can dramatically decrease performance.' ) AS Details
 								FROM    sys.databases
 								WHERE   is_auto_shrink_on = 1
+										AND state <> 6 /* Offline */
 										AND name NOT IN ( SELECT DISTINCT
 																  DatabaseName
 														  FROM    #SkipChecks
@@ -1703,7 +1704,7 @@ AS
 					  FROM sys.databases
 					  WHERE page_verify_option < 2
 					  AND name <> ''tempdb''
-					  AND state <> 1 /* Restoring */
+					  AND state NOT IN (1, 6) /* Restoring, Offline */
 					  and name not in (select distinct DatabaseName from #SkipChecks WHERE CheckID IS NULL OR CheckID = 14) OPTION (RECOMPILE);';
 								
 								IF @Debug = 2 AND @StringToExecute IS NOT NULL PRINT @StringToExecute;

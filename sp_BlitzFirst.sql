@@ -45,7 +45,7 @@ BEGIN
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-SELECT @Version = '7.99999', @VersionDate = '20201211';
+SELECT @Version = '8.0', @VersionDate = '20210117';
 
 IF(@VersionCheckMode = 1)
 BEGIN
@@ -85,7 +85,7 @@ https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit/
 
 MIT License
 
-Copyright (c) 2020 Brent Ozar Unlimited
+Copyright (c) 2021 Brent Ozar Unlimited
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -1387,7 +1387,7 @@ BEGIN
 						WHERE  QUOTENAME([name]) = @OutputDatabaseName)
 	BEGIN
 		RAISERROR('Logging sp_BlitzWho to table',10,1) WITH NOWAIT;
-		EXEC sp_BlitzWho @OutputDatabaseName = @UnquotedOutputDatabaseName, @OutputSchemaName = @UnquotedOutputSchemaName, @OutputTableName = @OutputTableNameBlitzWho, @CheckDateOverride = @StartSampleTime;
+		EXEC sp_BlitzWho @OutputDatabaseName = @UnquotedOutputDatabaseName, @OutputSchemaName = @UnquotedOutputSchemaName, @OutputTableName = @OutputTableNameBlitzWho, @CheckDateOverride = @StartSampleTime, @OutputTableRetentionDays = @OutputTableRetentionDays;
 	END
 
 	RAISERROR('Beginning investigatory queries',10,1) WITH NOWAIT;
