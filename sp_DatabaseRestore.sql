@@ -11,6 +11,7 @@ ALTER PROCEDURE [dbo].[sp_DatabaseRestore]
     @MoveDataDrive NVARCHAR(260) = NULL, 
     @MoveLogDrive NVARCHAR(260) = NULL, 
     @MoveFilestreamDrive NVARCHAR(260) = NULL,
+	@MoveFullTextCatalogDrive NVARCHAR(260) = NULL, 
 	@BufferCount INT = NULL,
 	@MaxTransferSize INT = NULL,
 	@BlockSize INT = NULL,
@@ -36,10 +37,11 @@ ALTER PROCEDURE [dbo].[sp_DatabaseRestore]
     @VersionCheckMode BIT = 0
 AS
 SET NOCOUNT ON;
+SET STATISTICS XML OFF;
 
 /*Versioning details*/
 
-SELECT @Version = '8.0', @VersionDate = '20210117';
+SELECT @Version = '8.05', @VersionDate = '20210725';
 
 IF(@VersionCheckMode = 1)
 BEGIN
@@ -224,7 +226,7 @@ DECLARE @cmd NVARCHAR(4000) = N'', --Holds xp_cmdshell command
 		@LogRecoveryOption AS NVARCHAR(MAX) = N'', --Holds the option to cause logs to be restored in standby mode or with no recovery
 		@DatabaseLastLSN NUMERIC(25, 0), --redo_start_lsn of the current database
 		@i TINYINT = 1,  --Maintains loop to continue logs
-		@LogRestoreRanking SMALLINT = 1, --Holds Log iteration # when multiple paths & backup files are being stripped
+		@LogRestoreRanking INT = 1, --Holds Log iteration # when multiple paths & backup files are being stripped
 		@LogFirstLSN NUMERIC(25, 0), --Holds first LSN in log backup headers
 		@LogLastLSN NUMERIC(25, 0), --Holds last LSN in log backup headers
 		@LogLastNameInMsdbAS NVARCHAR(MAX) = N'', -- Holds last TRN file name already restored 
@@ -342,40 +344,40 @@ CREATE TABLE #Headers
 );
 
 /*
-Correct paths in case people forget a final "\" 
+Correct paths in case people forget a final "\" or "/"
 */
 /*Full*/
-IF (SELECT RIGHT(@BackupPathFull, 1)) <> '\' AND CHARINDEX('\', @BackupPathFull) > 0 --Has to end in a '\'
-BEGIN
-	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathFull to add a "\"', 0, 1) WITH NOWAIT;
-	SET @BackupPathFull += N'\';
-END;
-ELSE IF (SELECT RIGHT(@BackupPathFull, 1)) <> '/' AND CHARINDEX('/', @BackupPathFull) > 0 --Has to end in a '/'
+IF (SELECT RIGHT(@BackupPathFull, 1)) <> '/' AND CHARINDEX('/', @BackupPathFull) > 0 --Has to end in a '/'
 BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathFull to add a "/"', 0, 1) WITH NOWAIT;
 	SET @BackupPathFull += N'/';
 END;
-/*Diff*/
-IF (SELECT RIGHT(@BackupPathDiff, 1)) <> '\' AND CHARINDEX('\', @BackupPathDiff) > 0 --Has to end in a '\'
+ELSE IF (SELECT RIGHT(@BackupPathFull, 1)) <> '\' --Has to end in a '\'
 BEGIN
-	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathDiff to add a "\"', 0, 1) WITH NOWAIT;
-	SET @BackupPathDiff += N'\';
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathFull to add a "\"', 0, 1) WITH NOWAIT;
+	SET @BackupPathFull += N'\';
 END;
-ELSE IF (SELECT RIGHT(@BackupPathDiff, 1)) <> '/' AND CHARINDEX('/', @BackupPathDiff) > 0 --Has to end in a '/'
+/*Diff*/
+IF (SELECT RIGHT(@BackupPathDiff, 1)) <> '/' AND CHARINDEX('/', @BackupPathDiff) > 0 --Has to end in a '/'
 BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathDiff to add a "/"', 0, 1) WITH NOWAIT;
 	SET @BackupPathDiff += N'/';
 END;
-/*Log*/
-IF (SELECT RIGHT(@BackupPathLog, 1)) <> '\' AND CHARINDEX('\', @BackupPathLog) > 0 --Has to end in a '\'
+ELSE IF (SELECT RIGHT(@BackupPathDiff, 1)) <> '\' --Has to end in a '\'
 BEGIN
-	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathLog to add a "\"', 0, 1) WITH NOWAIT;
-	SET @BackupPathLog += N'\';
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathDiff to add a "\"', 0, 1) WITH NOWAIT;
+	SET @BackupPathDiff += N'\';
 END;
-ELSE IF (SELECT RIGHT(@BackupPathLog, 1)) <> '/' AND CHARINDEX('/', @BackupPathLog) > 0 --Has to end in a '/'
+/*Log*/
+IF (SELECT RIGHT(@BackupPathLog, 1)) <> '/' AND CHARINDEX('/', @BackupPathLog) > 0 --Has to end in a '/'
 BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathLog to add a "/"', 0, 1) WITH NOWAIT;
 	SET @BackupPathLog += N'/';
+END;
+IF (SELECT RIGHT(@BackupPathLog, 1)) <> '\' --Has to end in a '\'
+BEGIN
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @BackupPathLog to add a "\"', 0, 1) WITH NOWAIT;
+	SET @BackupPathLog += N'\';
 END;
 /*Move Data File*/
 IF NULLIF(@MoveDataDrive, '') IS NULL
@@ -383,15 +385,15 @@ BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Getting default data drive for @MoveDataDrive', 0, 1) WITH NOWAIT;
 	SET @MoveDataDrive = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(260));
 END;
-IF (SELECT RIGHT(@MoveDataDrive, 1)) <> '\' AND CHARINDEX('\', @MoveDataDrive) > 0 --Has to end in a '\'
-BEGIN
-	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveDataDrive to add a "\"', 0, 1) WITH NOWAIT;
-	SET @MoveDataDrive += N'\';
-END;
-ELSE IF (SELECT RIGHT(@MoveDataDrive, 1)) <> '/' AND CHARINDEX('/', @MoveDataDrive) > 0 --Has to end in a '/'
+IF (SELECT RIGHT(@MoveDataDrive, 1)) <> '/' AND CHARINDEX('/', @MoveDataDrive) > 0 --Has to end in a '/'
 BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveDataDrive to add a "/"', 0, 1) WITH NOWAIT;
 	SET @MoveDataDrive += N'/';
+END;
+ELSE IF (SELECT RIGHT(@MoveDataDrive, 1)) <> '\' --Has to end in a '\'
+BEGIN
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveDataDrive to add a "\"', 0, 1) WITH NOWAIT;
+	SET @MoveDataDrive += N'\';
 END;
 /*Move Log File*/
 IF NULLIF(@MoveLogDrive, '') IS NULL
@@ -399,15 +401,15 @@ BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Getting default log drive for @MoveLogDrive', 0, 1) WITH NOWAIT;
 	SET @MoveLogDrive  = CAST(SERVERPROPERTY('InstanceDefaultLogPath') AS nvarchar(260));
 END;
-IF (SELECT RIGHT(@MoveLogDrive, 1)) <> '\' AND CHARINDEX('\', @MoveLogDrive) > 0 --Has to end in a '\'
-BEGIN
-	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveLogDrive to add a "\"', 0, 1) WITH NOWAIT;
-	SET @MoveLogDrive += N'\';
-END;
-ELSE IF (SELECT RIGHT(@MoveLogDrive, 1)) <> '/' AND CHARINDEX('/', @MoveLogDrive) > 0 --Has to end in a '/'
+IF (SELECT RIGHT(@MoveLogDrive, 1)) <> '/' AND CHARINDEX('/', @MoveLogDrive) > 0 --Has to end in a '/'
 BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing@MoveLogDrive to add a "/"', 0, 1) WITH NOWAIT;
 	SET @MoveLogDrive += N'/';
+END;
+ELSE IF (SELECT RIGHT(@MoveLogDrive, 1)) <> '\' --Has to end in a '\'
+BEGIN
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveLogDrive to add a "\"', 0, 1) WITH NOWAIT;
+	SET @MoveLogDrive += N'\';
 END;
 /*Move Filestream File*/
 IF NULLIF(@MoveFilestreamDrive, '') IS NULL
@@ -415,26 +417,42 @@ BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Setting default data drive for @MoveFilestreamDrive', 0, 1) WITH NOWAIT;
 	SET @MoveFilestreamDrive  = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(260));
 END;
-IF (SELECT RIGHT(@MoveFilestreamDrive, 1)) <> '\' AND CHARINDEX('\', @MoveFilestreamDrive) > 0 --Has to end in a '\'
-BEGIN
-	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveFilestreamDrive to add a "\"', 0, 1) WITH NOWAIT;
-	SET @MoveFilestreamDrive += N'\';
-END;
-ELSE IF (SELECT RIGHT(@MoveFilestreamDrive, 1)) <> '/' AND CHARINDEX('/', @MoveFilestreamDrive) > 0 --Has to end in a '/'
+IF (SELECT RIGHT(@MoveFilestreamDrive, 1)) <> '/' AND CHARINDEX('/', @MoveFilestreamDrive) > 0 --Has to end in a '/'
 BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveFilestreamDrive to add a "/"', 0, 1) WITH NOWAIT;
 	SET @MoveFilestreamDrive += N'/';
 END;
-/*Standby Undo File*/
-IF (SELECT RIGHT(@StandbyUndoPath, 1)) <> '\' AND CHARINDEX('\', @StandbyUndoPath) > 0 --Has to end in a '\'
+ELSE IF (SELECT RIGHT(@MoveFilestreamDrive, 1)) <> '\' --Has to end in a '\'
 BEGIN
-	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @StandbyUndoPath to add a "\"', 0, 1) WITH NOWAIT;
-	SET @StandbyUndoPath += N'\';
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveFilestreamDrive to add a "\"', 0, 1) WITH NOWAIT;
+	SET @MoveFilestreamDrive += N'\';
 END;
-ELSE IF (SELECT RIGHT(@StandbyUndoPath, 1)) <> '/' AND CHARINDEX('/', @StandbyUndoPath) > 0 --Has to end in a '/'
+/*Move FullText Catalog File*/
+IF NULLIF(@MoveFullTextCatalogDrive, '') IS NULL
+BEGIN
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Setting default data drive for @MoveFullTextCatalogDrive', 0, 1) WITH NOWAIT;
+	SET @MoveFullTextCatalogDrive  = CAST(SERVERPROPERTY('InstanceDefaultDataPath') AS nvarchar(260));
+END;
+IF (SELECT RIGHT(@MoveFullTextCatalogDrive, 1)) <> '/' AND CHARINDEX('/', @MoveFullTextCatalogDrive) > 0 --Has to end in a '/'
+BEGIN
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveFullTextCatalogDrive to add a "/"', 0, 1) WITH NOWAIT;
+	SET @MoveFullTextCatalogDrive += N'/';
+END;
+IF (SELECT RIGHT(@MoveFullTextCatalogDrive, 1)) <> '\' --Has to end in a '\'
+BEGIN
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @MoveFullTextCatalogDrive to add a "\"', 0, 1) WITH NOWAIT;
+	SET @MoveFullTextCatalogDrive += N'\';
+END;
+/*Standby Undo File*/
+IF (SELECT RIGHT(@StandbyUndoPath, 1)) <> '/' AND CHARINDEX('/', @StandbyUndoPath) > 0 --Has to end in a '/'
 BEGIN
 	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @StandbyUndoPath to add a "/"', 0, 1) WITH NOWAIT;
 	SET @StandbyUndoPath += N'/';
+END;
+IF (SELECT RIGHT(@StandbyUndoPath, 1)) <> '\' --Has to end in a '\'
+BEGIN
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('Fixing @StandbyUndoPath to add a "\"', 0, 1) WITH NOWAIT;
+	SET @StandbyUndoPath += N'\';
 END;
 
 IF @RestoreDatabaseName IS NULL OR @RestoreDatabaseName LIKE N'' /*use LIKE instead of =, otherwise N'' = N' '. See: https://www.brentozar.com/archive/2017/04/surprising-behavior-trailing-spaces/ */
@@ -727,6 +745,7 @@ BEGIN
 				    WHEN Type = 'D' THEN @MoveDataDrive
 				    WHEN Type = 'L' THEN @MoveLogDrive
 				    WHEN Type = 'S' THEN @MoveFilestreamDrive
+					WHEN Type = 'F' THEN @MoveFullTextCatalogDrive
 			    END + CASE 
                         WHEN @Database = @RestoreDatabaseName THEN REVERSE(LEFT(REVERSE(PhysicalName), CHARINDEX('\', REVERSE(PhysicalName), 1) -1))
 					    ELSE REPLACE(REVERSE(LEFT(REVERSE(PhysicalName), CHARINDEX('\', REVERSE(PhysicalName), 1) -1)), @Database, SUBSTRING(@RestoreDatabaseName, 2, LEN(@RestoreDatabaseName) -2))
@@ -980,7 +999,11 @@ BEGIN
 	END
     /*End folder sanity check*/
     -- Find latest diff backup 
-    SELECT @LastDiffBackup = MAX(BackupFile)
+	SELECT @LastDiffBackup = MAX(CASE
+		WHEN @StopAt IS NULL OR REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) <= @StopAt THEN
+			BackupFile
+		ELSE ''
+		END)
     FROM @FileList
     WHERE BackupFile LIKE N'%.bak'
         AND
@@ -1227,50 +1250,26 @@ BEGIN
 	
 END
 
-
+IF (@StopAt IS NOT NULL)
+BEGIN
+	
+	IF @Execute = 'Y' OR @Debug = 1 RAISERROR('@OnlyLogsAfter is NOT NULL, deleting from @FileList', 0, 1) WITH NOWAIT;
+	
+    DELETE fl
+	FROM @FileList AS fl
+	WHERE BackupFile LIKE N'%.trn'
+	AND BackupFile LIKE N'%' + @Database + N'%' 
+	AND REPLACE( RIGHT( REPLACE( fl.BackupFile, RIGHT( fl.BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( fl.BackupFile ) ) ), '' ), 16 ), '_', '' ) > @StopAt;
+	
+END
 
 -- Check for log backups
-IF(@StopAt IS NULL AND @OnlyLogsAfter IS NULL)
+IF(@BackupDateTime IS NOT NULL AND @BackupDateTime <> '')
 	BEGIN 
 		DELETE FROM @FileList
 		WHERE BackupFile LIKE N'%.trn'
 		AND BackupFile LIKE N'%' + @Database + N'%'
 		AND NOT (@ContinueLogs = 1 OR (@ContinueLogs = 0 AND REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) >= @BackupDateTime));
-	END;
-
-
-IF (@StopAt IS NULL AND @OnlyLogsAfter IS NOT NULL)	
-	BEGIN
-		DELETE FROM @FileList
-		WHERE BackupFile LIKE N'%.trn'
-		AND BackupFile LIKE N'%' + @Database + N'%'
-		AND NOT (@ContinueLogs = 1 OR (@ContinueLogs = 0 AND REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) >= @OnlyLogsAfter));
-	END;
-
-
-IF (@StopAt IS NOT NULL AND @OnlyLogsAfter IS NULL)	
-	BEGIN
-		DELETE FROM @FileList
-		WHERE BackupFile LIKE N'%.trn'
-		AND BackupFile LIKE N'%' + @Database + N'%'
-		AND NOT (@ContinueLogs = 1 OR (@ContinueLogs = 0 AND REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) >= @BackupDateTime) AND REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) <= @StopAt)
-		AND NOT ((@ContinueLogs = 1 AND REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) <= @StopAt) OR (@ContinueLogs = 0 AND REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) >= @BackupDateTime) AND REPLACE( RIGHT( REPLACE( BackupFile, RIGHT( BackupFile, PATINDEX( '%_[0-9][0-9]%', REVERSE( BackupFile ) ) ), '' ), 16 ), '_', '' ) <= @StopAt)
-
-	END;
-
-IF (@StopAt IS NOT NULL AND @OnlyLogsAfter IS NOT NULL)	
-	BEGIN
-		DECLARE BackupFiles CURSOR FOR
-			SELECT BackupFile
-			FROM @FileList
-			WHERE BackupFile LIKE N'%.trn'
-			  AND BackupFile LIKE N'%' + @Database + N'%'
-			  AND (@ContinueLogs = 1 OR (@ContinueLogs = 0 AND REPLACE(LEFT(RIGHT(BackupFile, 19), 15),'_','') >= @BackupDateTime) AND REPLACE(LEFT(RIGHT(BackupFile, 19), 15),'_','') <= @StopAt)
-			  AND ((@ContinueLogs = 1 AND REPLACE(LEFT(RIGHT(BackupFile, 19), 15),'_','') <= @StopAt) OR (@ContinueLogs = 0 AND REPLACE(LEFT(RIGHT(BackupFile, 19), 15),'_','') >= @BackupDateTime) AND REPLACE(LEFT(RIGHT(BackupFile, 19), 15),'_','') <= @StopAt)
-			  AND (@ContinueLogs = 1 OR (@ContinueLogs = 0 AND REPLACE(LEFT(RIGHT(BackupFile, 19), 15),'_','') >= @OnlyLogsAfter))
-			  ORDER BY BackupFile;
-		
-		OPEN BackupFiles;
 	END;
 
 
